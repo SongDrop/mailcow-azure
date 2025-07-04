@@ -97,3 +97,9 @@ Enter disk size in GB [128]:
 ---
 
 Happy mailing with your new Mailcow setup on Azure! 🚀
+
+# SongDrop on OpenCollective
+
+[![Open Collective](https://opencollective.com/songdropnet/all/badge.svg)](https://opencollective.com/songdropnet)
+
+Support us by contributing or sponsoring!
