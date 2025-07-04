@@ -29,17 +29,6 @@ This is an **automatic installation** on Azure to set up a Mailcow self-hosted e
 
 ---
 
-## To start:
-
-```bash
-python3 -m venv myenv
-source myenv/bin/activate
-pip install -r requirements.txt
-python3 create_vm.py
-```
-
----
-
 ## Required `.env` values for Azure:
 
 You need to provide the following values in your `.env` file:
@@ -55,6 +44,17 @@ AZURE_APP_TENANT_ID=''
 ```
 
 You also need to create a new Azure Application in Azure Entra ID (Azure Active Directory) to get these credentials.
+
+---
+
+## To start:
+
+```bash
+python3 -m venv myenv
+source myenv/bin/activate
+pip install -r requirements.txt
+python3 create_vm.py
+```
 
 ---
 
