@@ -289,11 +289,12 @@ async def main():
         print_success(f"Created DNS zone '{domain}'.")
 
     # Create DNS A record
-    print_info(f"Creating DNS A record for {subdomain}.{domain} -> {public_ip}")
-    a_record_set = RecordSet(ttl=3600, a_records=[{'ipv4_address': public_ip}])
-    record_name = subdomain.rstrip('.') if subdomain else '@' 
-    dns_client.record_sets.create_or_update(resource_group, domain, record_name, 'A', a_record_set)
-    print_success(f"Created DNS A record for {subdomain}.{domain} -> {public_ip}")
+    a_records = [subdomain, "autodiscover", "autoconfig"]
+    for a_record in a_records:
+        print_info(f"Creating DNS A record for {a_record} for DNS Zone {domain} -> {public_ip}")
+        a_record_set = RecordSet(ttl=3600, a_records=[{'ipv4_address': public_ip}])
+        dns_client.record_sets.create_or_update(resource_group, domain, a_record, 'A', a_record_set)
+        print_success(f"Created DNS  A record for {a_record} for DNS Zone {domain} -> {public_ip}")
 
     # Deploy Custom Script Extension to run PowerShell setup script
     print_info(f"Deploying Custom Script Extension to install script on VM.")
