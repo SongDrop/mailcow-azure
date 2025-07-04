@@ -6,21 +6,6 @@ def generate_setup(
     base_domain = DOMAIN_NAME.split('.', 1)[-1] if DOMAIN_NAME.count('.') > 1 else DOMAIN_NAME
     mail_domain = DOMAIN_NAME
 
-    certbot_install = """
-echo "Installing certbot..."
-apt-get install -y certbot
-"""
-
-    certbot_command = f"""
-echo "Requesting Let's Encrypt certificate via HTTP challenge..."
-# Ensure webroot exists
-mkdir -p /var/www/html
-
-certbot certonly --webroot -w /var/www/html \\
-  -d {DOMAIN_NAME} -d autodiscover.{base_domain} -d autoconfig.{base_domain} \\
-  --agree-tos --no-eff-email --email {ADMIN_EMAIL} --non-interactive
-"""
-
     script_template = f"""#!/bin/bash
 
 set -e
@@ -102,15 +87,10 @@ ufw reload || true
 echo "Pulling and starting Mailcow containers..."
 docker-compose pull
 
-echo "Certbot install..."   
-{certbot_install}
-echo "Certbot commands..."   
-{certbot_command}
-
 echo "Docker starting"
 docker-compose up -d
 
-echo "Mailcow setup completed successfully with SSL certificates!"
+echo "Mailcow setup completed successfully!"
 
 echo ""
 echo "IMPORTANT DNS Records to configure for {DOMAIN_NAME} (replace YOUR_IPV4 and YOUR_IPV6 accordingly):"
