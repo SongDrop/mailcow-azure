@@ -90,6 +90,7 @@ Enter Azure region [uksouth]:
 Enter VM size [Standard_B2s]:
 Enter admin email [admin@example.com]:
 Enter admin password [smtppass123!]:
+Enter disk size in GB [128]:
 ```
 
 ---
