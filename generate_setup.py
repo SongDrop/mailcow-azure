@@ -74,7 +74,7 @@ echo "Requesting Let's Encrypt certificate via HTTP challenge..."
 mkdir -p /var/www/html
 
 certbot certonly --webroot -w /var/www/html \\
-  -d {base_domain} -d {DOMAIN_NAME} -d autodiscover.{base_domain} -d autoconfig.{base_domain} \\
+  -d {DOMAIN_NAME} -d autodiscover.{base_domain} -d autoconfig.{base_domain} \\
   --agree-tos --no-eff-email --email {ADMIN_EMAIL} --non-interactive
 """
 
