@@ -23,9 +23,27 @@ This is an **automatic installation** on Azure to set up a Mailcow self-hosted e
 
 ---
 
-## Step 1: Create the virtual machine and the resources needed
+## Step 1: Create a Microsoft Azure account on https://portal.azure.com
 
-## Step 2: Upload and run setup script for automatic software installation on the virtual machine
+## Step 2: Point your DNS records to Microsoft Azure
+
+## Step 3: Create the virtual machine and the resources needed
+
+## Step 4: Upload and run setup script for automatic software installation on the virtual machine
+
+---
+
+---
+
+> **Important:**  
+> You will need to update your domain's nameservers at your registrar (e.g., Namecheap) to the following Azure DNS nameservers:
+>
+> - ns1-01.azure-dns.com
+> - ns2-01.azure-dns.net
+> - ns3-01.azure-dns.org
+> - ns4-01.azure-dns.info
+>
+> Make sure your DNS records point to Azure **before** you start the installation.
 
 ---
 
