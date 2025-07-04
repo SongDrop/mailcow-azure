@@ -100,6 +100,7 @@ Happy mailing with your new Mailcow setup on Azure! 🚀
 
 # SongDrop on OpenCollective
 
-[![Open Collective](https://opencollective.com/songdropnet/all/badge.svg)](https://opencollective.com/songdropnet)
+Our backers:  
+[![Backers on Open Collective](https://opencollective.com/songdropnet/backers/badge.svg)](https://opencollective.com/songdropnet#backers)
 
 Support us by contributing or sponsoring!
