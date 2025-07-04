@@ -79,15 +79,15 @@ async def main():
 
     username = prompt_input("Enter VM username", "azureuser")
     password = prompt_input("Enter VM password", "azurepassword1234!", secret=True)
-    domain = prompt_input("Enter main domain", "example.com")
-    subdomain = prompt_input("Enter subdomain (e.g., 'smtp'; leave blank for root domain)", "smtp")
+    domain = prompt_input("Enter main domain", "win10dev.xyz")
+    subdomain = prompt_input("Enter subdomain (e.g., 'smtp')", "smtp")
     if subdomain:
         subdomain = subdomain.strip().strip('.')
         fqdn = f"{subdomain}.{domain}"
     else:
         fqdn = domain
     print_info(f"Full domain to configure: {fqdn}")
-    resource_group = prompt_input("Enter resource group name", "mailcow")
+    resource_group = prompt_input("Enter resource group name", "win10dev")
     pc_name = 'stmp'#''.join(random.choices(string.ascii_lowercase, k=6))
     vm_name = prompt_input("Enter VM name", pc_name)
     location = prompt_input("Enter Azure region", "uksouth")
@@ -289,13 +289,19 @@ async def main():
         print_success(f"Created DNS zone '{domain}'.")
 
     # Create DNS A record
+    print_info(f"Creating DNS A record for {subdomain}.{domain} -> {public_ip}")
+    a_record_set = RecordSet(ttl=3600, a_records=[{'ipv4_address': public_ip}])
+    record_name = subdomain.rstrip('.') if subdomain else '@' 
+    dns_client.record_sets.create_or_update(resource_group, domain, record_name, 'A', a_record_set)
+    print_success(f"Created DNS A record for {subdomain}.{domain} -> {public_ip}")
+
     a_records = [subdomain, "autodiscover", "autoconfig"]
     for a_record in a_records:
         print_info(f"Creating DNS A record for {a_record} for DNS Zone {domain} -> {public_ip}")
         a_record_set = RecordSet(ttl=3600, a_records=[{'ipv4_address': public_ip}])
         dns_client.record_sets.create_or_update(resource_group, domain, a_record, 'A', a_record_set)
         print_success(f"Created DNS  A record for {a_record} for DNS Zone {domain} -> {public_ip}")
-
+        
     # Deploy Custom Script Extension to run PowerShell setup script
     print_info(f"Deploying Custom Script Extension to install script on VM.")
     # Create Extension for script setup .sh
@@ -340,8 +346,7 @@ async def main():
             dns_client,
             resource_group,
             domain,
-            subdomain,
-            fqdn=fqdn,
+            a_records,
             vm_name=vm_name,
             storage_account_name=storage_account_name
         )
@@ -469,7 +474,7 @@ def check_vm_size_compatibility(vm_size):
     gen2_compatible_vm_sizes = ['Standard_B2s']
     return vm_size in gen2_compatible_vm_sizes
 
-async def cleanup_resources_on_failure(network_client, compute_client, storage_client, blob_service_client, container_name, blob_name, dns_client, resource_group, domain, subdomain, fqdn, vm_name, storage_account_name):
+async def cleanup_resources_on_failure(network_client, compute_client, storage_client, blob_service_client, container_name, blob_name, dns_client, resource_group, domain, a_records, vm_name, storage_account_name):
     print_warn("Starting cleanup of Azure resources due to failure...")
 
     # Delete VM
@@ -534,12 +539,13 @@ async def cleanup_resources_on_failure(network_client, compute_client, storage_c
         print_warn(f"Could not delete Storage Account '{storage_account_name}': {e}")
 
     # Delete DNS A record (keep DNS zone)
-    try:
-        record_name = subdomain if subdomain else '@'
-        dns_client.record_sets.delete(resource_group, domain, record_name, 'A')
-        print_info(f"Deleted DNS A record '{record_name}' in zone '{domain}'.")
-    except Exception as e:
-        print_warn(f"Could not delete DNS A record '{record_name}' in zone '{domain}': {e}")
+    for record_name in a_records:
+        record_to_delete = record_name if record_name else '@'  # handle root domain with '@'
+        try:
+            dns_client.record_sets.delete(resource_group, domain, record_to_delete, 'A')
+            print_info(f"Deleted DNS A record '{record_to_delete}' in zone '{domain}'.")
+        except Exception as e:
+            print_warn(f"Could not delete DNS A record '{record_to_delete}' in zone '{domain}': {e}")
 
     print_success("Cleanup completed.")
 
