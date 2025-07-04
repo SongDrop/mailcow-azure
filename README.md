@@ -27,9 +27,9 @@ This is an **automatic installation** on Azure to set up a Mailcow self-hosted e
 
 ## Step 2: Point your DNS records to Microsoft Azure
 
-## Step 3: Create the virtual machine and the resources needed
+## Step 3: Create a new Application in Microsoft Entra ID and fill out the .evn
 
-## Step 4: Upload and run setup script for automatic software installation on the virtual machine
+## Step 4: Run setup script for automatic software installation on the virtual machine
 
 ---
 
