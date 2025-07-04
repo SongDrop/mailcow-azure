@@ -97,7 +97,8 @@ async def main():
     admin_email =  prompt_input("Enter admin email", f"admin@{domain}")
     random_admin_password = 'smtppass123!'#''.join(random.choices(string.ascii_lowercase, k=6))
     admin_password = prompt_input("Enter admin password", random_admin_password)
-   
+    OS_DISK_SSD_GB = prompt_input("Enter disk size in GB", '128')
+
     try:
         credentials = ClientSecretCredential(
             client_id=os.environ['AZURE_APP_CLIENT_ID'],
