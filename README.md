@@ -64,7 +64,7 @@ python3 create_vm.py
 Enter VM username [azureuser]:
 Enter VM password [azurepassword1234!]:
 Enter main domain [example.com]:
-Enter subdomain (e.g., 'smtp'; leave blank for root domain) [smtp]:
+Enter subdomain (e.g., 'smtp') [smtp]:
 [INFO] Full domain to configure: smtp.example.com
 Enter resource group name [smtpgroup]:
 Enter VM name [stmp]:
