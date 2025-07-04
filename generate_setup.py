@@ -3,65 +3,8 @@ def generate_setup(
     ADMIN_EMAIL,
     MAILCOW_ADMIN_PASSWORD
 ):
-    # Prepare domain variants for nginx server_name
     base_domain = DOMAIN_NAME.split('.', 1)[-1] if DOMAIN_NAME.count('.') > 1 else DOMAIN_NAME
     mail_domain = DOMAIN_NAME
-    nginx_conf_filename = f"/etc/nginx/sites-available/{base_domain}"
-
-    # Nginx config text with placeholders replaced
-    # Added location for HTTP challenge at port 80 to allow certbot verification
-    nginx_config = f"""
-server {{
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-
-    server_name {base_domain} {mail_domain} autodiscover.{base_domain} autoconfig.{base_domain};
-    client_max_body_size 1G;
-
-    location / {{
-        proxy_pass http://localhost:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }}
-
-    ssl_certificate /etc/letsencrypt/live/{base_domain}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/{base_domain}/privkey.pem;
-
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:50m;
-    ssl_session_tickets off;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers 'ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256';
-
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy "no-referrer" always;
-    add_header Permissions-Policy "geolocation=(), microphone=()" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-}}
-
-server {{
-    listen 80;
-    listen [::]:80;
-
-    server_name {base_domain} {mail_domain} autodiscover.{base_domain} autoconfig.{base_domain};
-
-    # Allow Let's Encrypt ACME HTTP challenge
-    location /.well-known/acme-challenge/ {{
-        root /var/www/html;
-    }}
-
-    # Redirect everything else to HTTPS
-    location / {{
-        return 301 https://$host$request_uri;
-    }}
-}}
-"""
 
     certbot_install = """
 echo "Installing certbot..."
@@ -100,7 +43,7 @@ MAILCOW_GIT="https://github.com/mailcow/mailcow-dockerized.git"
 
 echo "Updating system and installing dependencies..."
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y curl docker.io git netcat-openbsd ufw nginx
+DEBIAN_FRONTEND=noninteractive apt-get install -y curl docker.io git netcat-openbsd ufw
 
 echo "Installing docker-compose..."
 DOCKER_COMPOSE_VERSION="v2.24.5"
@@ -159,7 +102,6 @@ ufw reload || true
 echo "Pulling and starting Mailcow containers..."
 docker-compose pull
 
-
 echo "Certbot install..."   
 {certbot_install}
 echo "Certbot commands..."   
@@ -168,17 +110,7 @@ echo "Certbot commands..."
 echo "Docker starting"
 docker-compose up -d
 
-echo "Writing Nginx configuration file to {nginx_conf_filename}..."
-cat > {nginx_conf_filename} <<EOF
-{nginx_config}
-EOF
-
-echo "Enabling Nginx site and reloading service..."
-ln -sf {nginx_conf_filename} /etc/nginx/sites-enabled/
-nginx -t
-systemctl reload nginx
-
-echo "Mailcow setup completed successfully with Nginx reverse proxy and SSL!"
+echo "Mailcow setup completed successfully with SSL certificates!"
 
 echo ""
 echo "IMPORTANT DNS Records to configure for {DOMAIN_NAME} (replace YOUR_IPV4 and YOUR_IPV6 accordingly):"
