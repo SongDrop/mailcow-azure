@@ -43,7 +43,7 @@ image_reference = {
 }
 
 #MAILCOW PORST
-PORTS_TO_OPEN = [
+INBOUND_PORTS_TO_OPEN = [
     22,     # SSH
     80,     # HTTP
     443,    # HTTPS
@@ -57,6 +57,12 @@ PORTS_TO_OPEN = [
     143,    # Dovecot IMAP
     993,    # Dovecot IMAPS (IMAP over SSL)
     4190    # Dovecot ManageSieve (for Sieve email filtering)
+]
+OUTBOUND_PORTS_TO_ALLOW = [
+    25,    # Outbound SMTP
+    53,    # DNS resolution
+    80,    # HTTP (Let's Encrypt)
+    443,   # HTTPS (Let's Encrypt, updates)
 ]
 OS_DISK_SSD_GB = '128'
 
@@ -203,14 +209,29 @@ async def main():
     # Add NSG rules for required ports
     print_info(f"Updating NSG '{nsg_name}' with required port rules.")
     existing_rules = {rule.name for rule in nsg.security_rules} if nsg.security_rules else set()
-    priority = 100
-    for port in PORTS_TO_OPEN:
-        rule_name = f'AllowPort{port}'
+    for port in INBOUND_PORTS_TO_OPEN:
+        rule_name = f'In_AllowPort{port}'
         if rule_name not in existing_rules:
             rule = SecurityRule(
                 name=rule_name,
                 access='Allow',
                 direction='Inbound',
+                priority=priority,
+                protocol='Tcp',
+                source_address_prefix='*',
+                destination_address_prefix='*',
+                destination_port_range=str(port),
+                source_port_range='*'
+            )
+            nsg.security_rules.append(rule)
+            priority += 1
+    for port in OUTBOUND_PORTS_TO_ALLOW:
+        rule_name = f'Out_AllowPort{port}'
+        if rule_name not in existing_rules:
+            rule = SecurityRule(
+                name=rule_name,
+                access='Allow',
+                direction='Outbound',
                 priority=priority,
                 protocol='Tcp',
                 source_address_prefix='*',
