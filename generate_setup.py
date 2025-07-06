@@ -68,18 +68,24 @@ echo "Generating Mailcow configuration..."
 # 3) Branch selection = 1 (master)
 printf '%s\\nEtc/UTC\\n1\\n' "{DOMAIN_NAME}" | ./generate_config.sh
 
-echo "Allowing required ports through UFW..."
-ufw allow 22/tcp
-ufw allow 25/tcp
-ufw allow 465/tcp
-ufw allow 587/tcp
-ufw allow 110/tcp
-ufw allow 995/tcp
-ufw allow 143/tcp
-ufw allow 993/tcp
-ufw allow 4190/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
+# Inbound: allow clients and mail servers to connect to your services
+sudo ufw allow 22/tcp    # SSH
+sudo ufw allow 25/tcp    # SMTP
+sudo ufw allow 465/tcp   # SMTPS
+sudo ufw allow 587/tcp   # Submission
+sudo ufw allow 110/tcp   # POP3
+sudo ufw allow 995/tcp   # POP3S
+sudo ufw allow 143/tcp   # IMAP
+sudo ufw allow 993/tcp   # IMAPS
+sudo ufw allow 4190/tcp  # ManageSieve
+sudo ufw allow 80/tcp    # HTTP (ACME)
+sudo ufw allow 443/tcp   # HTTPS (ACME, web UI)
+
+# Outbound: allow sending mail + DNS + cert updates
+sudo ufw allow out 25/tcp   # SMTP to other mail servers
+sudo ufw allow out 53       # DNS resolution (TCP/UDP)
+sudo ufw allow out 443/tcp  # HTTPS for Let's Encrypt, updates
+sudo ufw allow out 587/tcp  # SMTP Submission (if needed)
 
 ufw status | grep -qw inactive && echo "Enabling UFW firewall..." && ufw --force enable
 
