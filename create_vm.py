@@ -27,7 +27,7 @@ from azure.mgmt.compute.models import (
     LinuxConfiguration
 )
 from azure.mgmt.dns import DnsManagementClient
-from azure.mgmt.dns.models import RecordSet
+from azure.mgmt.dns.models import RecordSet,TxtRecord
 from azure.mgmt.storage import StorageManagementClient
 from azure.mgmt.storage import StorageManagementClient
  
@@ -295,13 +295,62 @@ async def main():
     dns_client.record_sets.create_or_update(resource_group, domain, record_name, 'A', a_record_set)
     print_success(f"Created DNS A record for {subdomain}.{domain} -> {public_ip}")
 
-    a_records = [subdomain, "autodiscover", "autoconfig"]
+    #A-RECORDS
+    a_records = [subdomain]
     for a_record in a_records:
         print_info(f"Creating DNS A record for {a_record} for DNS Zone {domain} -> {public_ip}")
         a_record_set = RecordSet(ttl=3600, a_records=[{'ipv4_address': public_ip}])
         dns_client.record_sets.create_or_update(resource_group, domain, a_record, 'A', a_record_set)
         print_success(f"Created DNS  A record for {a_record} for DNS Zone {domain} -> {public_ip}")
         
+    #TXT-RECORDS
+    spf_value = f"v=spf1 ip4:{public_ip} -all"
+    print_info(f"Creating DNS TXT record for {spf_value} for DNS Zone {domain} -> {public_ip}")
+    txt_record_set = RecordSet(ttl=3600, txt_records=[TxtRecord(value=[spf_value])])
+    dns_client.record_sets.create_or_update(
+        resource_group_name=resource_group,
+        zone_name=domain,
+        relative_record_set_name='@',
+        record_type='TXT',
+        parameters=txt_record_set
+    )
+    print_success(f"Created DNS TXT record for {spf_value} for DNS Zone {domain} -> {public_ip}")
+
+
+    # Create DMARC record
+    dmarc_value = f"v=DMARC1; p=quarantine; rua=mailto:admin@{domain}; ruf=mailto:admin@{domain}; fo=1; adkim=s; aspf=s"
+    print_info(f"Creating DNS TXT record for DMARC: {dmarc_value} for DNS Zone {domain}")
+    dmarc_record_set = RecordSet(ttl=3600, txt_records=[TxtRecord(value=[dmarc_value])])
+    dns_client.record_sets.create_or_update(
+    resource_group_name=resource_group,
+    zone_name=domain,
+    relative_record_set_name='_dmarc',
+    record_type='TXT',
+    parameters=dmarc_record_set
+    )
+
+    print_success(f"Created DNS TXT record for {spf_value} for DNS Zone {domain} -> {public_ip}")
+
+
+    # ACME challenge record
+    acme_value = f"_acme-challenge.{domain}"
+    print_info(f"Creating DNS TXT record for acme-challenge: {acme_value} for DNS Zone {domain}")
+    acme_record_set = RecordSet(ttl=3600, txt_records=[TxtRecord(value=[acme_value])])
+    dns_client.record_sets.create_or_update(
+    resource_group_name=resource_group,
+    zone_name=domain,
+    relative_record_set_name='_acme-challenge',
+    record_type='TXT',
+    parameters=acme_record_set
+    )
+        
+    print_success(f"Creating DNS TXT record for acme-challenge: {acme_value} for DNS Zone {domain} -> {public_ip}")
+    # print_info(f"Creating DNS TXT record for {a_record} for DNS Zone {domain} -> {public_ip}")
+    # a_record_set = RecordSet(ttl=3600, a_records=[{'ipv4_address': public_ip}])
+    # dns_client.record_sets.create_or_update(resource_group, domain, f"v=DMARC1; p=quarantine; adkim=s; aspf=s:", 'TXT', a_record_set)
+    # print_success(f"Created DNS TXT record for {a_record} for DNS Zone {domain} -> {public_ip}")
+
+
     # Deploy Custom Script Extension to run PowerShell setup script
     print_info(f"Deploying Custom Script Extension to install script on VM.")
     # Create Extension for script setup .sh
@@ -312,7 +361,7 @@ async def main():
         'type_handler_version': '2.0',
         'settings': {
             'fileUris': [blob_url_with_sas],
-            'commandToExecute': f'sh {blob_name}',  # Update command accordingly
+            'commandToExecute': f'bash {blob_name}',  # Update command accordingly
         },
     }
     extension = None
@@ -328,12 +377,14 @@ async def main():
 
     if extension:
         print_success(f"Deployed Custom Script Extension '{extension.name}'.")
-        cleanup_temp_storage_on_success(resource_group,storage_client,blob_service_client,container_name,blob_name)
+        await cleanup_temp_storage_on_success(resource_group, storage_client, storage_account_name, blob_service_client, container_name, blob_name)
 
         print_success("-----------------------------------------------------")
         print_success("Azure Windows VM provisioning completed successfully!")
         print_success("-----------------------------------------------------")
-        print_info(f"Access your service at: https://{subdomain}.{domain}")
+        print_success(f"Access your service at:-----------------------------")
+        print_success("https://{subdomain}.{domain}")
+        print_success("-----------------------------------------------------")
     else:
         print_warn("Custom Script Extension deployment did not complete successfully.")
         await cleanup_resources_on_failure(
@@ -541,16 +592,27 @@ async def cleanup_resources_on_failure(network_client, compute_client, storage_c
     # Delete DNS A record (keep DNS zone)
     for record_name in a_records:
         record_to_delete = record_name if record_name else '@'  # handle root domain with '@'
+        print_info(f"Deleting DNS A record '{record_to_delete}' in zone '{domain}'.")
         try:
             dns_client.record_sets.delete(resource_group, domain, record_to_delete, 'A')
-            print_info(f"Deleted DNS A record '{record_to_delete}' in zone '{domain}'.")
+            print_success(f"Deleted DNS A record '{record_to_delete}' in zone '{domain}'.")
         except Exception as e:
             print_warn(f"Could not delete DNS A record '{record_to_delete}' in zone '{domain}': {e}")
 
+    # Delete old TXT records if needed
+    txt_records_to_clean = ['@', '_dmarc','_acme-challenge']  # Root and DMARC records
+    for record_name in txt_records_to_clean:
+        print_info(f"Deleting DNS TXT record '{record_name}' in zone '{domain}'.")
+        try:
+            dns_client.record_sets.delete(resource_group, domain, record_name, 'TXT')
+            print_success(f"Deleted DNS TXT record '{record_name}' in zone '{domain}'.")
+        except Exception as e:
+            print_warn(f"Could not delete DNS TXT record '{record_name}' in zone '{domain}': {e}")
+
     print_success("Cleanup completed.")
 
-async def cleanup_temp_storage_on_success(resource_group, storage_client,storage_account_name, blob_service_client, container_name, blob_name):
-    print_warn("Starting cleanup of Azure resources due to failure...")
+async def cleanup_temp_storage_on_success(resource_group, storage_client, storage_account_name, blob_service_client, container_name, blob_name):
+    print_info("Starting cleanup of Azure resources on success...")
 
     # Delete Storage Account
     try:
