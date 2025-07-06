@@ -99,6 +99,7 @@ async def main():
     admin_password = prompt_input("Enter admin password", random_admin_password)
     OS_DISK_SSD_GB = prompt_input("Enter disk size in GB", '128')
 
+
     try:
         credentials = ClientSecretCredential(
             client_id=os.environ['AZURE_APP_CLIENT_ID'],
@@ -142,6 +143,8 @@ async def main():
     sh_script = generate_setup.generate_setup(
         fqdn, admin_email, admin_password
     )
+
+    print(sh_script)
 
     blob_service_client = BlobServiceClient(account_url=AZURE_STORAGE_URL, credential=credentials)
     container_name = 'vm-startup-scripts'
@@ -316,7 +319,6 @@ async def main():
     )
     print_success(f"Created DNS TXT record for {spf_value} for DNS Zone {domain} -> {public_ip}")
 
-
     # Create DMARC record
     dmarc_value = f"v=DMARC1; p=quarantine; rua=mailto:admin@{domain}; ruf=mailto:admin@{domain}; fo=1; adkim=s; aspf=s"
     print_info(f"Creating DNS TXT record for DMARC: {dmarc_value} for DNS Zone {domain}")
@@ -328,7 +330,6 @@ async def main():
     record_type='TXT',
     parameters=dmarc_record_set
     )
-
     print_success(f"Created DNS TXT record for {spf_value} for DNS Zone {domain} -> {public_ip}")
 
 
@@ -342,14 +343,8 @@ async def main():
     relative_record_set_name='_acme-challenge',
     record_type='TXT',
     parameters=acme_record_set
-    )
-        
+    )        
     print_success(f"Creating DNS TXT record for acme-challenge: {acme_value} for DNS Zone {domain} -> {public_ip}")
-    # print_info(f"Creating DNS TXT record for {a_record} for DNS Zone {domain} -> {public_ip}")
-    # a_record_set = RecordSet(ttl=3600, a_records=[{'ipv4_address': public_ip}])
-    # dns_client.record_sets.create_or_update(resource_group, domain, f"v=DMARC1; p=quarantine; adkim=s; aspf=s:", 'TXT', a_record_set)
-    # print_success(f"Created DNS TXT record for {a_record} for DNS Zone {domain} -> {public_ip}")
-
 
     # Deploy Custom Script Extension to run PowerShell setup script
     print_info(f"Deploying Custom Script Extension to install script on VM.")
@@ -383,7 +378,7 @@ async def main():
         print_success("Azure Windows VM provisioning completed successfully!")
         print_success("-----------------------------------------------------")
         print_success(f"Access your service at:-----------------------------")
-        print_success("https://{subdomain}.{domain}")
+        print_success(f"https://{subdomain}.{domain}")
         print_success("-----------------------------------------------------")
     else:
         print_warn("Custom Script Extension deployment did not complete successfully.")
