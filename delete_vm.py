@@ -107,14 +107,44 @@ async def delete_vm_and_resources(subscription_id, resource_group, vm_name, doma
     except Exception as e:
         print_warn(f"Failed to delete VNet '{vnet_name}': {e}")
 
-    # Delete DNS A records
+    # Delete DNS A record (keep DNS zone)
     for record_name in a_records:
-        record_to_delete = record_name if record_name else '@'  # '@' for root domain
+        record_to_delete = record_name if record_name else '@'  # handle root domain with '@'
+        print_info(f"Deleting DNS A record '{record_to_delete}' in zone '{domain}'.")
         try:
             dns_client.record_sets.delete(resource_group, domain, record_to_delete, 'A')
             print_success(f"Deleted DNS A record '{record_to_delete}' in zone '{domain}'.")
         except Exception as e:
-            print_warn(f"Failed to delete DNS A record '{record_to_delete}' in zone '{domain}': {e}")
+            print_warn(f"Could not delete DNS A record '{record_to_delete}' in zone '{domain}': {e}")
+
+    # Delete old TXT records if needed
+    txt_records_to_clean = ['@', '_dmarc','_acme-challenge']  # Root and DMARC records
+    for record_name in txt_records_to_clean:
+        print_info(f"Deleting DNS TXT record '{record_name}' in zone '{domain}'.")
+        try:
+            dns_client.record_sets.delete(resource_group, domain, record_name, 'TXT')
+            print_success(f"Deleted DNS TXT record '{record_name}' in zone '{domain}'.")
+        except Exception as e:
+            print_warn(f"Could not delete DNS TXT record '{record_name}' in zone '{domain}': {e}")
+
+    # Delete MX record
+    print_info(f"Deleting DNS MX record '@' in zone '{domain}'.")
+    try:
+        dns_client.record_sets.delete(resource_group, domain, '@', 'MX')
+        print_success(f"Deleted DNS MX record '@' in zone '{domain}'.")
+    except Exception as e:
+        print_warn(f"Could not delete DNS MX record '@' in zone '{domain}': {e}")
+
+    # Delete CNAME records
+    cname_records = ['autodiscover', 'autoconfig']
+    for cname in cname_records:
+        print_info(f"Deleting DNS CNAME record '{cname}' in zone '{domain}'.")
+        try:
+            dns_client.record_sets.delete(resource_group, domain, cname, 'CNAME')
+            print_success(f"Deleted DNS CNAME record '{cname}' in zone '{domain}'.")
+        except Exception as e:
+            print_warn(f"Could not delete DNS CNAME record '{cname}' in zone '{domain}': {e}")
+
 
     print_success("Deletion process completed.")
 
