@@ -1,4 +1,4 @@
-def generate_setup(DOMAIN_NAME, ADMIN_EMAIL, MAILCOW_ADMIN_PASSWORD):
+def generate_setup(DOMAIN_NAME, ADMIN_EMAIL, MAILCOW_ADMIN_PASSWORD, PORT=80):
     import re
 
     def get_base_domain(domain):
@@ -8,121 +8,171 @@ def generate_setup(DOMAIN_NAME, ADMIN_EMAIL, MAILCOW_ADMIN_PASSWORD):
             raise ValueError(f"'{domain}' is not a valid FQDN to derive base domain")
         return '.'.join(parts[-2:])
 
-    # Validate and extract base domain
-    base_domain = get_base_domain(DOMAIN_NAME)
-
-    # Basic FQDN validation
     fqdn_pattern = re.compile(r'^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
     if not fqdn_pattern.match(DOMAIN_NAME):
         raise ValueError(f"{DOMAIN_NAME} is not a valid FQDN (e.g., smtp.example.com)")
 
+    base_domain = get_base_domain(DOMAIN_NAME)
+
+    gpt_repo = "https://github.com/mailcow/mailcow-dockerized.git"
+    letsencrypt_options_url = "https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf"
+    ssl_dhparams_url = "https://raw.githubusercontent.com/certbot/certbot/master/certbot/certbot/ssl-dhparams.pem"
+    INSTALL_DIR = "/opt/mailcow-dockerized"
+    docker_compose_url = "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64"
+  
     script_template = f"""#!/bin/bash
+set -euo pipefail
 
-set -e
+MAILCOW_DIR="{INSTALL_DIR}"
 
-echo "DOMAIN_NAME={DOMAIN_NAME}"
-echo "base_domain={base_domain}"
+cleanup() {{
+    echo "[CLEANUP] Removing Mailcow containers and volumes..."
+    cd "$MAILCOW_DIR" || exit 1
+    docker-compose down -v --remove-orphans || true
+    docker system prune -f --volumes -f || true
+}}
 
-# Validate DOMAIN_NAME is a proper FQDN
-if [[ ! "{DOMAIN_NAME}" =~ ^[a-zA-Z0-9.-]+\\.[a-zA-Z]{{2,}}$ ]]; then
-    echo "ERROR: {DOMAIN_NAME} is not a valid FQDN (e.g., {DOMAIN_NAME})"
-    exit 1
-fi
+trap 'echo "[ERROR] An error occurred. Running cleanup..."; cleanup' ERR
 
+# ========== [1/10] ENV VARIABLES ==========
 DOMAIN_NAME="{DOMAIN_NAME}"
 ADMIN_EMAIL="{ADMIN_EMAIL}"
 MAILCOW_ADMIN_PASSWORD="{MAILCOW_ADMIN_PASSWORD}"
-MAILCOW_DIR="/opt/mailcow-dockerized"
-MAILCOW_GIT="https://github.com/mailcow/mailcow-dockerized.git"
+MAILCOW_GIT="{gpt_repo}"
+PORT="{PORT}"
 
-echo "Updating system and installing dependencies..."
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y curl docker.io git netcat-openbsd ufw software-properties-common
+echo "Starting Mailcow setup for DOMAIN_NAME=$DOMAIN_NAME (base domain: {base_domain})"
 
-echo "Installing docker-compose..."
-DOCKER_COMPOSE_VERSION="v2.24.5"
-curl -SL https://github.com/docker/compose/releases/download/$DOCKER_COMPOSE_VERSION/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
+# ========== [2/10] CHECK AND FREE PORTS ==========
+echo "[2/10] Checking ports 80 and 443 availability..."
+
+for port in 80 443; do
+    if ss -tln | grep -q ":$port\$"; then
+        echo "Port $port is in use. Attempting to stop conflicting services..."
+        systemctl stop nginx || true
+        systemctl stop apache2 || true
+        fuser -k $port/tcp || true
+        sleep 3
+        if ss -tln | grep -q ":$port\$"; then
+            echo "ERROR: Port $port still in use after cleanup attempts. Please free it manually."
+            exit 1
+        else
+            echo "Port $port freed."
+        fi
+    else
+        echo "Port $port is free."
+    fi
+done
+
+# ========== [3/10] INSTALL DEPENDENCIES ==========
+echo "[3/10] Installing dependencies..."
+
+export DEBIAN_FRONTEND=noninteractive
+
+# Remove docker.io package if installed to avoid conflicts with Docker CE
+if dpkg -l | grep -q docker.io; then
+    apt-get remove -y docker.io
+fi
+
+apt-get update -y
+apt-get install -y \\
+    curl \\
+    git \\
+    netcat-openbsd \\
+    ufw \\
+    software-properties-common \\
+    apt-transport-https \\
+    ca-certificates \\
+    gnupg \\
+    lsb-release \\
+    certbot
+
+# ========== [4/10] INSTALL DOCKER CE ==========
+echo "[4/10] Installing Docker CE..."
+
+if ! command -v docker >/dev/null 2>&1; then
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+    apt-get update -y
+    apt-get install -y docker-ce docker-ce-cli containerd.io
+else
+    echo "Docker is already installed."
+fi
+
+# ========== [5/10] INSTALL DOCKER-COMPOSE ==========
+echo "[5/10] Installing docker-compose..."
+
+curl -fsSL {docker_compose_url} -o /usr/local/bin/docker-compose
 chmod +x /usr/local/bin/docker-compose
 ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
 
-echo "Enabling and starting Docker service..."
+# ========== [6/10] ENABLE AND START DOCKER ==========
+echo "[6/10] Enabling and starting Docker..."
+
 systemctl enable docker
 systemctl start docker
 
-echo "Creating Mailcow directory..."
+# ========== [7/10] CLONE MAILCOW ==========
+echo "[7/10] Cloning Mailcow repository to $MAILCOW_DIR ..."
+
 mkdir -p "$MAILCOW_DIR"
-cd "$MAILCOW_DIR" || exit 1
+cd "$MAILCOW_DIR"
 
 if [ -d ".git" ]; then
-    echo "Mailcow repo already exists, pulling latest changes..."
+    echo "Repository exists, pulling latest changes..."
     git pull
 else
-    echo "Cloning Mailcow repository..."
     git clone "$MAILCOW_GIT" .
 fi
 
-echo "Generating Mailcow configuration..."
-# Non-interactive input:
-# 1) Hostname = DOMAIN_NAME
-# 2) Timezone = Etc/UTC
-# 3) Branch selection = 1 (master)
-printf '%s\\nEtc/UTC\\n1\\n' "{DOMAIN_NAME}" | ./generate_config.sh
+# ========== [8/10] GENERATE CONFIG ==========
+echo "[8/10] Generating Mailcow configuration..."
+printf '%s\nEtc/UTC\n1\n' "$DOMAIN_NAME" | ./generate_config.sh
 
-# Inbound: allow clients and mail servers to connect to your services
-sudo ufw allow 22/tcp    # SSH
-sudo ufw allow 25/tcp    # SMTP
-sudo ufw allow 465/tcp   # SMTPS
-sudo ufw allow 587/tcp   # Submission
-sudo ufw allow 110/tcp   # POP3
-sudo ufw allow 995/tcp   # POP3S
-sudo ufw allow 143/tcp   # IMAP
-sudo ufw allow 993/tcp   # IMAPS
-sudo ufw allow 4190/tcp  # ManageSieve
-sudo ufw allow 80/tcp    # HTTP (ACME)
-sudo ufw allow 443/tcp   # HTTPS (ACME, web UI)
+# ========== [9/10] CONFIGURE FIREWALL ==========
+echo "[9/10] Configuring firewall rules..."
 
-# Outbound: allow sending mail + DNS + cert updates
-sudo ufw allow out 25/tcp   # SMTP to other mail servers
-sudo ufw allow out 53       # DNS resolution (TCP/UDP)
-sudo ufw allow out 443/tcp  # HTTPS for Let's Encrypt, updates
-sudo ufw allow out 587/tcp  # SMTP Submission (if needed)
+ufw allow 22/tcp    # SSH
+ufw allow 25/tcp    # SMTP
+ufw allow 465/tcp   # SMTPS
+ufw allow 587/tcp   # Submission
+ufw allow 110/tcp   # POP3
+ufw allow 995/tcp   # POP3S
+ufw allow 143/tcp   # IMAP
+ufw allow 993/tcp   # IMAPS
+ufw allow 4190/tcp  # ManageSieve
+ufw allow 80/tcp    # HTTP
+ufw allow 443/tcp   # HTTPS
 
-ufw status | grep -qw inactive && echo "Enabling UFW firewall..." && ufw --force enable
+# Allow Docker bridge network traffic (adjust if different)
+ufw allow in on docker0
+ufw allow out on docker0
+
+ufw allow out 25/tcp
+ufw allow out 53
+ufw allow out 443/tcp
+ufw allow out 587/tcp
+
+if ufw status | grep -qw inactive; then
+    echo "Enabling UFW firewall..."
+    ufw --force enable
+fi
 
 ufw reload || true
 
-echo "Pulling and starting Mailcow containers..."
-docker-compose pull
+# ========== [10/10] START MAILCOW ==========
+echo "[10/10] Pulling and starting Mailcow containers..."
 
-echo "Docker starting"
+docker-compose pull
 docker-compose up -d
 
-echo "Installing certbot for wildcard SSL certificate..."
-apt-get install -y certbot
+sleep 15
 
 
-echo "Linking wildcard certificates to Mailcow..."
-ln -sf /etc/letsencrypt/live/{DOMAIN_NAME}/fullchain.pem data/assets/ssl/cert.pem
-ln -sf /etc/letsencrypt/live/{DOMAIN_NAME}/privkey.pem data/assets/ssl/key.pem
-
-echo "Creating cron job for cert renewal..."
-
-cat >/etc/cron.daily/mailcow-cert-renew <<'EOF'
-#!/bin/bash
-set -e
-echo "Running certbot renew (manual DNS challenge - you must update TXT records)..."
-certbot renew --manual-public-ip-logging-ok --preferred-challenges dns --manual
-if [ $? -eq 0 ]; then
-  echo "Renewal successful, restarting Mailcow nginx..."
-  cd /opt/mailcow-dockerized || exit 1
-  docker-compose restart nginx-mailcow
-fi
-EOF
-
-chmod +x /etc/cron.daily/mailcow-cert-renew
-
-echo "Mailcow setup and wildcard cert complete!"
-
+echo ""
+echo "Mailcow setup and SSL certificate are complete!"
 echo ""
 echo "IMPORTANT DNS Records to configure for {DOMAIN_NAME} (replace YOUR_IPV4 and YOUR_IPV6 accordingly):"
 echo "A Record: {DOMAIN_NAME} -> Your Server IP"
@@ -130,14 +180,14 @@ echo "CNAME: autodiscover -> {DOMAIN_NAME}"
 echo "CNAME: autoconfig -> {DOMAIN_NAME}"
 echo "MX Record for {base_domain}: {DOMAIN_NAME} with highest priority"
 echo "SRV Record: _autodiscover._tcp -> 0 5 443 {DOMAIN_NAME}"
-echo "TXT Record (SPF): \\"v=spf1 ip4:YOUR_IPV4 ip6:YOUR_IPV6 -all\\""
-echo "TXT Record (_DMARC): \\"v=DMARC1; p=quarantine; adkim=s; aspf=s\\""
+echo 'TXT Record (SPF): "v=spf1 ip4:YOUR_IPV4 ip6:YOUR_IPV6 -all"'
+echo 'TXT Record (_DMARC): "v=DMARC1; p=quarantine; adkim=s; aspf=s"'
 echo ""
 echo "After Mailcow startup, add these DNS records from Mailcow UI:"
 echo "- TLSA for _25._tcp.{DOMAIN_NAME}"
 echo "- TXT for dkim._domainkey.{base_domain}"
 echo ""
-echo "Mailcow is now accessible at: https://{base_domain}/"
+echo "Mailcow is now accessible at: https://{DOMAIN_NAME}/"
 echo "Admin email: {ADMIN_EMAIL}"
 echo "Admin password: {MAILCOW_ADMIN_PASSWORD}"
 """
